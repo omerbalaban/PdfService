@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Logo.NAFCore.Common" Version="2.69.1.9" />
+    <PackageReference Include="Logo.NAFCore.Settings" Version="2.69.1.9" />
+  </ItemGroup>
+
+</Project>
