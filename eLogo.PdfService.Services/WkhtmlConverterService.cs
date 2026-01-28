@@ -4,11 +4,12 @@ using eLogo.PdfService.Services.Domain.Collections.Interfaces;
 using eLogo.PdfService.Services.Interfaces;
 using HtmlAgilityPack;
 using Newtonsoft.Json;
-using RestSharp;
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -22,13 +23,15 @@ namespace eLogo.PdfService.Services
         private readonly IImageResizer _imageResizer;
         private readonly ICompressService _compressService;
         private readonly IPdfTransactionCollection _pdfTransactionCollection;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public WkhtmlConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IPdfTransactionCollection pdfTransactionCollection)
+        public WkhtmlConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IPdfTransactionCollection pdfTransactionCollection, IHttpClientFactory httpClientFactory)
         {
             _logger = logger;
             _imageResizer = imageResizer;
             _compressService = compressService;
             _pdfTransactionCollection = pdfTransactionCollection;
+            _httpClientFactory = httpClientFactory;
         }
 
         public Task<PdfResultBinary[]> ConvertHtmlToImage(HtmlToPdfModelBinary model)
@@ -55,16 +58,15 @@ namespace eLogo.PdfService.Services
 
                 await SavePdfTransactionRequest(model, PdfConverterType.WkHtmlToPDF, MethodInfo.GetCurrentMethod());
 
+
                 htmlBuffer = model.Content;
                 await WriteTraceFile(model, htmlBuffer);
 
                 string htmlContent = ClearHtmlDocument(Encoding.UTF8.GetString(htmlBuffer));
 
-                using var restClient = new RestClient();
-                restClient.AddDefaultHeader("Content-Type", "application/json; charset=utf-8");
-                var restRequest = new RestRequest(Settings.Settings.AppSetting.wkhtmlPdfSettings.WkhtmlToPdfServiceUrl, Method.Post);
-
-                string request = JsonConvert.SerializeObject(new HtmlToPdfModel
+                using var httpClient = _httpClientFactory.CreateClient();
+                
+                var requestModel = new HtmlToPdfModel
                 {
                     Attachments = model.Attachments?.Select(s => new AttachmentModel { Data = Convert.ToBase64String(s.Data), FileName = s.FileName }).ToArray(),
                     Base64HtmlContent = Convert.ToBase64String(Encoding.UTF8.GetBytes(htmlContent)),
@@ -76,11 +78,12 @@ namespace eLogo.PdfService.Services
                     PageSize = model.PageSize,
                     PdfConverter = model.PdfConverter ?? 30,
                     Zoom = model.Zoom ?? 100,
-                }, Formatting.Indented);
+                };
 
-                restRequest.AddBody(request);
-
-                var response = restClient.Execute<PdfResult>(restRequest);
+                string requestJson = JsonConvert.SerializeObject(requestModel, Formatting.Indented);
+                using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+                
+                var response = await httpClient.PostAsync(Settings.Settings.AppSetting.wkhtmlPdfSettings.WkhtmlToPdfServiceUrl, content);
 
                 _logger.Info($"WkhtmlToPdf HtmlContent Temizleme Tamamlandi  {model.CorrelationId} DocTitle : {model.DocumentTitle}");
 
@@ -90,15 +93,22 @@ namespace eLogo.PdfService.Services
 
                 if (response.IsSuccessStatusCode)
                 {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var pdfResult = JsonConvert.DeserializeObject<PdfResult>(responseContent);
+                    
                     return new PdfResultBinary
                     {
-                        Content = model.IsZipped ? _compressService.ZipData(response.Data.AsByteArray()) : response.Data.AsByteArray(),
+                        Content = model.IsZipped ? _compressService.ZipData(pdfResult.AsByteArray()) : pdfResult.AsByteArray(),
                         Success = true,
                         Id = model.CorrelationId ?? Guid.NewGuid().ToString()
                     };
                 }
                 else
-                    throw new ArgumentException($"Pdf Donusumu tamamlanamadi {model.CorrelationId} {model.DocumentTitle}, {response.ErrorMessage}");
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new ArgumentException($"Pdf Donusumu tamamlanamadi {model.CorrelationId} {model.DocumentTitle}, Status: {response.StatusCode}, Error: {errorContent}");
+                }
+            
             }
             catch (Exception ex)
             {

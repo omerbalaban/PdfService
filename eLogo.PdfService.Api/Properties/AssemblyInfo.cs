@@ -1,5 +1,4 @@
-﻿using NAFCore.Common.Attributes;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.InteropServices;
 
 // General Information about an assembly is controlled through the following
@@ -29,4 +28,3 @@ using System.Runtime.InteropServices;
 //
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
-[assembly: NAFSecurityId("CD545196-69DF-47C2-ACFA-F8BAF9FAEFD9", "eLogo.PdfService")]

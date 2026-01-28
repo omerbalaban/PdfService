@@ -42,6 +42,8 @@ namespace eLogo.PdfService.Api
             
             RegisterDbContext(builder);
 
+            RegisterApplicationServices(builder);
+
             RegisterIronPdf(builder);
 
             // Configure MVC
@@ -84,53 +86,12 @@ namespace eLogo.PdfService.Api
             await app.RunAsync();
         }
 
-        //private static async Task InitializeMongoDbAsync(WebApplication app)
-        //{
-        //    Trace.TraceInformation("Starting MongoDB initialization...");
-
-        //    try
-        //    {
-        //        using var scope = app.Services.CreateScope();
-        //        var database = scope.ServiceProvider.GetRequiredService<IMongoDatabase>();
-        //        var initializer = new MongoDbInitializer(database);
-
-        //        await initializer.InitializeAsync();
-
-        //        Trace.TraceInformation("MongoDB indexes initialized successfully.");
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        Trace.TraceError($"MongoDB initialization failed: {ex.Message}");
-        //        // Production'da uygulama başlamasını engellemek isterseniz throw edebilirsiniz
-        //        // throw;
-        //    }
-        //}
 
         private static void ConfigureTracing()
         {
             Trace.Listeners.Add(new ConsoleTraceListener());
             Trace.AutoFlush = true;
         }
-
-        //private static void RegisterApiVersioning(WebApplicationBuilder builder)
-        //{
-        //    Trace.TraceInformation("Starting API Versioning registration.");
-
-        //    builder.Services.AddApiVersioning(options =>
-        //    {
-        //        options.DefaultApiVersion = new ApiVersion(1, 0);
-        //        options.AssumeDefaultVersionWhenUnspecified = true;
-        //        options.ReportApiVersions = true;
-        //        options.ApiVersionReader = ApiVersionReader.Combine(new UrlSegmentApiVersionReader(), new HeaderApiVersionReader("X-Api-Version"), new QueryStringApiVersionReader("api-version"));
-        //    })
-        //    .AddApiExplorer(options =>
-        //    {
-        //        options.GroupNameFormat = "'v'V";
-        //        options.SubstituteApiVersionInUrl = true;
-        //    });
-
-        //    Trace.TraceInformation("API Versioning registered.");
-        //}
 
 
         private static void RegisterSwagger(WebApplicationBuilder builder)
@@ -204,6 +165,12 @@ namespace eLogo.PdfService.Api
             // IMPORTANT: These MUST be thread-safe and stateless
             builder.Services.AddSingleton<ICompressService, CompressService>();
             builder.Services.AddSingleton<IImageResizer, ImageResizer>();
+
+            // Register HttpClient factory for making HTTP requests
+            builder.Services.AddHttpClient();
+
+            // Register PDF converter services (Scoped - requires scoped dependencies like IPdfTransactionCollection)
+            builder.Services.AddScoped<IWkhtmlConvertService, WkhtmlConverterService>();
 
             Trace.TraceInformation("Services: Utility services registered (Singleton)");
         }
