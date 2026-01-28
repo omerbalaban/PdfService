@@ -15,12 +15,12 @@
 		<PackageReference Include="HtmlAgilityPack" Version="1.11.51" />
 		<PackageReference Include="IronPdf.Native.Chrome.Linux" Version="2023.3.12968" />
 		<PackageReference Include="IronPdf" Version="2023.3.2" />
-		<PackageReference Include="Logo.NAFCore.Common.Log2Fluentd" Version="2.69.1.9" />
 		<PackageReference Include="IronSoftware.System.Drawing" Version="2023.3.3" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageReference Include="RestSharp" Version="112.1.0" />
 
-		<PackageReference Include="MongoDB.Bson" Version="3.4.2" />
-		<PackageReference Include="MongoDB.Driver" Version="3.4.2" />
+		<PackageReference Include="MongoDB.Bson" Version="3.5.2" />
+		<PackageReference Include="MongoDB.Driver" Version="3.5.2" />
 	</ItemGroup>
 
 	<ItemGroup>

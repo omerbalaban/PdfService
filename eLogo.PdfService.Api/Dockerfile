@@ -45,5 +45,5 @@ RUN chmod 777 .
 RUN cp -r ./Fonts/* /usr/share/fonts/
 RUN chown -R appuser:appuser /app
 USER appuser
-ENTRYPOINT ["dotnet", "eLogo.Micronorm.PdfService.Api.dll"]
+ENTRYPOINT ["dotnet", "eLogo.PdfService.Api.dll"]
 EXPOSE 8100

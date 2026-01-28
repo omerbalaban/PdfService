@@ -1,14 +1,14 @@
-﻿using eLogo.PdfService.Models;
+﻿using eLogo.LogProvider.Interface;
+using eLogo.PdfService.Models;
 using eLogo.PdfService.Services.Domain.Collections.Interfaces;
 using eLogo.PdfService.Services.Interfaces;
-using eLogo.PdfService.Settings;
 using HtmlAgilityPack;
 using IronSoftware.Drawing;
-using NAFCore.Common.Utils.Diagnostics.Logger;
+using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Mail;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -18,21 +18,19 @@ namespace eLogo.PdfService.Services
 {
     public class IronPdfConverterService : IIronPdfConverter
     {
-        private readonly INLogger _logger;
-        private readonly AppSettings _appSettings;
+        private readonly IServiceLogger _logger;
         private readonly IImageResizer _imageResizer;
         private readonly ICompressService _compressService;
-        private readonly IPdfTransactionCollection _pdfTransactionCollection;
+        private readonly IServiceScopeFactory _serviceScopeFactory;
 
-        public IronPdfConverterService(AppSettings appSettings, IImageResizer imageResizer, ICompressService compressService, IPdfTransactionCollection pdfTransactionCollection)
+        public IronPdfConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IServiceScopeFactory serviceScopeFactory)
         {
-            _appSettings = appSettings;
+            _logger = logger;
             _imageResizer = imageResizer;
             _compressService = compressService;
-            _pdfTransactionCollection = pdfTransactionCollection;
-            _logger = NLogger.Instance();
+            _serviceScopeFactory = serviceScopeFactory;
 
-            _logger.Info($"Iron PDF License : {IronPdf.License.IsLicensed}");
+            Trace.TraceInformation($"Iron PDF License : {IronPdf.License.IsLicensed}");
         }
 
         private IronPdf.ChromePdfRenderer CreateRenderer(HtmlToPdfModelBinary model)
@@ -40,9 +38,9 @@ namespace eLogo.PdfService.Services
             var renderer = new IronPdf.ChromePdfRenderer();
             renderer.RenderingOptions.EnableJavaScript = true;
             renderer.RenderingOptions.RenderDelay = 50; //ms
-            renderer.RenderingOptions.Timeout = _appSettings.RenderTimeout;
+            renderer.RenderingOptions.Timeout = Settings.Settings.AppSetting.RenderTimeout;
             renderer.RenderingOptions.CssMediaType = IronPdf.Rendering.PdfCssMediaType.Screen;
-            renderer.RenderingOptions.Zoom = _appSettings.ZoomFactor == 0 ? 95 : _appSettings.ZoomFactor;
+            renderer.RenderingOptions.Zoom = Settings.Settings.AppSetting.ZoomFactor == 0 ? 95 : Settings.Settings.AppSetting.ZoomFactor;
             renderer.RenderingOptions.CreatePdfFormsFromHtml = false;
             renderer.RenderingOptions.PrintHtmlBackgrounds = true;
             renderer.RenderingOptions.PaperSize = GetPageSize(model.PageSize);
@@ -78,7 +76,7 @@ namespace eLogo.PdfService.Services
 
                 htmlBuffer = model.Content;
 
-                string requestId = await WriteTraceFile(model, htmlBuffer);
+                await WriteTraceFile(model, htmlBuffer);
 
                 renderer = CreateRenderer(model);
 
@@ -86,10 +84,10 @@ namespace eLogo.PdfService.Services
 
                 var renderTask = renderer.RenderHtmlAsPdfAsync(htmlContent);
 
-                var timeoutTask = Task.Delay(_appSettings.RenderTaskTimeout * 1000); //convert seconds to milliseconds
+                var timeoutTask = Task.Delay(Settings.Settings.AppSetting.RenderTaskTimeout * 1000); //convert seconds to milliseconds
                 if (await Task.WhenAny(renderTask, timeoutTask) == timeoutTask)
                 {
-                    throw new TimeoutException($"PDF rendering exceeded timeout of {_appSettings.RenderTaskTimeout} seconds");
+                    throw new TimeoutException($"PDF rendering exceeded timeout of {Settings.Settings.AppSetting.RenderTaskTimeout} seconds");
                 }
 
                 var pdfDocument = await renderTask;
@@ -112,9 +110,6 @@ namespace eLogo.PdfService.Services
                         pdfDocument.MetaData.CustomProperties.Add(s.Key, s.Value);
                 }
 
-                if (_appSettings.HtmlTraceEnable)
-                    _ = Task.Run(() => File.Delete(Path.Combine(_appSettings.HtmlPath, $"{requestId}.html")));
-
                 _logger.Info($"Iron PDF dönüşümü tamamlandı {model.CorrelationId} DocTitle : {model.DocumentTitle} {pdfDocument.BinaryData.Length}");
 
                 htmlBuffer = null;
@@ -130,7 +125,7 @@ namespace eLogo.PdfService.Services
             }
             catch (TimeoutException ex)
             {
-                _logger.Error(ex, $"Timeout: {ex.Message}", model?.CorrelationId, model?.Content?.Length ?? 0);
+                _logger.Error($"Timeout: {ex.Message}", ex);
                 throw;
             }
             finally
@@ -155,7 +150,7 @@ namespace eLogo.PdfService.Services
 
                 await SavePdfTransactionRequest(model, PdfConverterType.IronPdfConverter, MethodInfo.GetCurrentMethod());
 
-                string requestId = await WriteTraceFile(model, htmlBuffer);
+                await WriteTraceFile(model, htmlBuffer);
 
                 string htmlContent = ClearHtmlDocument(Encoding.UTF8.GetString(htmlBuffer));
 
@@ -179,9 +174,6 @@ namespace eLogo.PdfService.Services
 
                 var images = pdfDocument.ToBitmap(96);
 
-                if (_appSettings.HtmlTraceEnable)
-                    File.Delete(Path.Combine(_appSettings.HtmlPath, $"{model.CorrelationId.Replace("|", "_")}.html"));
-
                 // Nullify large objects to help GC
                 htmlBuffer = null;
                 model.Content = null;
@@ -197,7 +189,7 @@ namespace eLogo.PdfService.Services
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"IronPDF {ex.Message}", model?.CorrelationId, model?.Content?.Length ?? 0);
+                _logger.Error($"IronPDF {ex.Message}", ex);
                 throw;
             }
             finally
@@ -256,33 +248,30 @@ namespace eLogo.PdfService.Services
             return ParseEnumOrDefault(orientation, IronPdf.Rendering.PdfPaperOrientation.Portrait);
         }
 
-        private async Task<string> WriteTraceFile(HtmlToPdfModelBinary model, byte[] htmlBuffer)
+        private async Task WriteTraceFile(HtmlToPdfModelBinary model, byte[] htmlBuffer)
         {
-            string requestId = $"{model.DocumentTitle}_{DateTime.Now:yyyy_MM_dd_HH_mm_ss_fff}";
-            if (_appSettings.HtmlTraceEnable)
-            {
-                await File.WriteAllBytesAsync(Path.Combine(_appSettings.HtmlPath, $"{requestId}.html"), htmlBuffer);
-            }
-
-            return requestId;
+            //asenkron olarak mongoya yazılacak!!
         }
 
 
         private async Task SavePdfTransactionRequest(HtmlToPdfModelBinary model, PdfConverterType pdfConverter, MethodBase method)
         {
-            if (model.Content.Length > _appSettings.RequestLimit * 1024)
-                throw new InvalidDataException($"HTML Boyutu izin verilen limitlerin üzerinde {_appSettings.RequestLimit} KB");
+            if (model.Content.Length > Settings.Settings.AppSetting.RequestLimit * 1024)
+                throw new InvalidDataException($"HTML Boyutu izin verilen limitlerin üzerinde {Settings.Settings.AppSetting.RequestLimit} KB");
 
-            if (!_appSettings.TransactionLogCounterEnable)
+            if (!Settings.Settings.AppSetting.TransactionLogCounterEnable)
                 return;
+
+            using var scope = _serviceScopeFactory.CreateScope();
+            var pdfTransactionCollection = scope.ServiceProvider.GetRequiredService<IPdfTransactionCollection>();
 
             var sourceId = model.CustomPropertyItems?.FirstOrDefault(s => s.Key == "SourceId")?.Value;
             var vkn = model.CustomPropertyItems?.FirstOrDefault(s => s.Key == "VKN")?.Value;
             var userAccounRef = model.CustomPropertyItems?.FirstOrDefault(s => s.Key == "UserAccountRef")?.Value;
 
-            await _pdfTransactionCollection.InsertAsync(new Services.Domain.Models.PdfApiTransaction()
+            await pdfTransactionCollection.InsertAsync(new Services.Domain.Models.PdfApiTransaction()
             {
-                ApplicationName = _appSettings.ApplicationName,
+                ApplicationName = Settings.Settings.AppSetting.ApplicationName,
                 ClientKey = string.Empty,
                 CorrelationId = model.CorrelationId,
                 CreatedAt = DateTime.Now,

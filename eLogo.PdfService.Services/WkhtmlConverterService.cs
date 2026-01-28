@@ -1,12 +1,12 @@
-﻿using eLogo.PdfService.Models;
+﻿using eLogo.LogProvider.Interface;
+using eLogo.PdfService.Models;
 using eLogo.PdfService.Services.Domain.Collections.Interfaces;
 using eLogo.PdfService.Services.Interfaces;
-using eLogo.PdfService.Settings;
 using HtmlAgilityPack;
-using NAFCore.Common.Utils.Diagnostics.Logger;
 using Newtonsoft.Json;
 using RestSharp;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -18,16 +18,14 @@ namespace eLogo.PdfService.Services
 {
     public class WkhtmlConverterService : IWkhtmlConvertService
     {
-        private readonly AppSettings _appSettings;
+        private readonly IServiceLogger _logger;
         private readonly IImageResizer _imageResizer;
         private readonly ICompressService _compressService;
-        private readonly INLogger _logger;
         private readonly IPdfTransactionCollection _pdfTransactionCollection;
 
-        public WkhtmlConverterService(AppSettings appSettings, IImageResizer imageResizer, ICompressService compressService, IPdfTransactionCollection pdfTransactionCollection)
+        public WkhtmlConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IPdfTransactionCollection pdfTransactionCollection)
         {
-            _logger = NLogger.Instance();
-            _appSettings = appSettings;
+            _logger = logger;
             _imageResizer = imageResizer;
             _compressService = compressService;
             _pdfTransactionCollection = pdfTransactionCollection;
@@ -45,7 +43,7 @@ namespace eLogo.PdfService.Services
             try
             {
                 _logger.Info($"WkhtmlToPdf Convert Request Received {model.CorrelationId} DocTitle : {model.DocumentTitle}", null, model.CorrelationId, model.Content.Length);
-                
+
                 if (model.IsZipped)
                 {
                     model.Content = _compressService.UnzipData(model.Content);
@@ -58,13 +56,13 @@ namespace eLogo.PdfService.Services
                 await SavePdfTransactionRequest(model, PdfConverterType.WkHtmlToPDF, MethodInfo.GetCurrentMethod());
 
                 htmlBuffer = model.Content;
-                string requestId = await WriteTraceFile(model, htmlBuffer);
+                await WriteTraceFile(model, htmlBuffer);
 
                 string htmlContent = ClearHtmlDocument(Encoding.UTF8.GetString(htmlBuffer));
 
                 using var restClient = new RestClient();
                 restClient.AddDefaultHeader("Content-Type", "application/json; charset=utf-8");
-                var restRequest = new RestRequest(_appSettings.wkhtmlPdfSettings.WkhtmlToPdfServiceUrl, Method.Post);
+                var restRequest = new RestRequest(Settings.Settings.AppSetting.wkhtmlPdfSettings.WkhtmlToPdfServiceUrl, Method.Post);
 
                 string request = JsonConvert.SerializeObject(new HtmlToPdfModel
                 {
@@ -104,7 +102,7 @@ namespace eLogo.PdfService.Services
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"{ex.Message}", model?.CorrelationId, model?.Content?.Length ?? 0);
+                _logger.Error($"{ex.Message}", ex);
                 throw;
             }
             finally
@@ -140,20 +138,14 @@ namespace eLogo.PdfService.Services
 
             return cleanedHtml;
         }
-        private async Task<string> WriteTraceFile(HtmlToPdfModelBinary model, byte[] htmlBuffer)
+        private async Task WriteTraceFile(HtmlToPdfModelBinary model, byte[] htmlBuffer)
         {
-            string requestId = $"{model.DocumentTitle}_{DateTime.Now:yyyy_MM_dd_HH_mm_ss_fff}";
-            if (_appSettings.HtmlTraceEnable)
-            {
-                await File.WriteAllBytesAsync(Path.Combine(_appSettings.HtmlPath, $"{requestId}.html"), htmlBuffer);
-            }
-
-            return requestId;
+            //asenkron olarak mongoya yazılacak!!
         }
 
         private async Task SavePdfTransactionRequest(HtmlToPdfModelBinary model, PdfConverterType pdfConverter, MethodBase method)
         {
-            if (!_appSettings.TransactionLogCounterEnable)
+            if (!Settings.Settings.AppSetting.TransactionLogCounterEnable)
                 return;
 
             var sourceId = model.CustomPropertyItems?.FirstOrDefault(s => s.Key == "SourceId")?.Value;
@@ -162,7 +154,7 @@ namespace eLogo.PdfService.Services
 
             await _pdfTransactionCollection.InsertAsync(new Services.Domain.Models.PdfApiTransaction()
             {
-                ApplicationName = _appSettings.ApplicationName,
+                ApplicationName = Settings.Settings.AppSetting.ApplicationName,
                 ClientKey = string.Empty,
                 CorrelationId = model.CorrelationId,
                 CreatedAt = DateTime.Now,

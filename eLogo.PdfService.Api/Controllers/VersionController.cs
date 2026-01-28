@@ -1,4 +1,4 @@
-﻿using eLogo.PdfService.Settings;
+﻿using eLogo.PdfService.Settings.PaasSettings;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Diagnostics;

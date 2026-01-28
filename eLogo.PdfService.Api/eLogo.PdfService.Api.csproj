@@ -49,17 +49,15 @@
 
 
 	<ItemGroup>
+		<PackageReference Include="eLogo.LogProvider" Version="2.0.1" />
 		<PackageReference Include="IronPdf.Native.Chrome.Linux" Version="2023.3.12968" />
 		<PackageReference Include="IronSoftware.System.Drawing" Version="2023.3.3" />
-		<PackageReference Include="Logo.NAFCore.Common.Log2Fluentd" Version="2.69.1.9" />
-		<PackageReference Include="Logo.NAFCore.Platform.Launcher" Version="2.69.1.9" />
-		<PackageReference Include="Logo.NAFCore.Platform.Services.Client" Version="2.69.1.9" />
-		<PackageReference Include="Logo.NAFCore.Platform.Services.Hosting" Version="2.69.1.9" />
-		<PackageReference Include="Logo.NAFCore.Settings.UI" Version="2.69.1.9" />
+		<PackageReference Include="Logo.NAFCore.Common" Version="2.69.1.9" />
 		<PackageReference Include="MessagePack" Version="3.1.4" />
 		<PackageReference Include="IronPdf" Version="2023.3.2" />
 		<PackageReference Include="MessagePack.AspNetCoreMvcFormatter" Version="3.1.4" />
 		<PackageReference Include="MsgPack.Cli" Version="1.0.1" />
+		<PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
 	</ItemGroup>
 
 

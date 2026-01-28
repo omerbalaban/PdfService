@@ -1,10 +1,7 @@
-﻿using eLogo.PdfService.Models;
+﻿using eLogo.LogProvider.Interface;
+using eLogo.PdfService.Models;
 using eLogo.PdfService.Services.Interfaces;
-using eLogo.PdfService.Settings;
 using Microsoft.AspNetCore.Mvc;
-using NAFCore.Common.Utils.Diagnostics.Logger;
-using NAFCore.Platform.Services.Hosting.APIDoc.Attributes;
-using Swashbuckle.AspNetCore.Annotations;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -18,12 +15,10 @@ namespace eLogo.PdfService.Api.Controllers
     [Produces("application/x-msgpack", "application/json")]
     public class PdfBinaryController : ControllerBase
     {
-        private readonly INLogger _logger;
+        private readonly IServiceLogger _logger;
         private readonly Dictionary<PdfConverterType, IPdfConvertService> _converterList;
-        private readonly AppSettings _appSettings;
 
-
-        public PdfBinaryController(AppSettings appSettings, IIronPdfConverter ironPdfService, IWkhtmlConvertService wkhtmlConvertService)
+        public PdfBinaryController(IServiceLogger logger, IIronPdfConverter ironPdfService, IWkhtmlConvertService wkhtmlConvertService)
         {
             _converterList = new Dictionary<PdfConverterType, IPdfConvertService>
             {
@@ -32,13 +27,10 @@ namespace eLogo.PdfService.Api.Controllers
                 { PdfConverterType.WkHtmlToPDF, wkhtmlConvertService }
             };
 
-            _appSettings = appSettings;
-            _logger = NLogger.Instance();
+            _logger = logger;
         }
 
         [HttpPost("ConvertHtmlToPdf")]
-        [SwaggerOperation(OperationId = "HtmlToPdfStream")]
-        [SwaggerGroup("BinaryConversion")]
         [RequestSizeLimit((long)7 * 1024 * 1024)]
         public async Task<ActionResult<PdfResultBinary>> ConvertHtmlToPdf([FromBody] HtmlToPdfModelBinary requestModel)
         {
@@ -57,12 +49,12 @@ namespace eLogo.PdfService.Api.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                _logger.Error(ex, "Html to pdf conversion operation failed.", requestModel?.CorrelationId);
+                _logger.Error("Html to pdf conversion operation failed.", ex);
                 return BadRequest(new PdfResultBinary { Success = false, Message = ex.Message });
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Html to pdf conversion operation failed.", requestModel?.CorrelationId);
+                _logger.Error("Html to pdf conversion operation failed.", ex);
                 return StatusCode((int)HttpStatusCode.InternalServerError, new PdfResultBinary { Success = false, Message = ex.Message });
             }
             finally
@@ -73,8 +65,6 @@ namespace eLogo.PdfService.Api.Controllers
         }
 
         [HttpPost("ConvertHtmlToImage")]
-        [SwaggerOperation(OperationId = "HtmlToImageStream")]
-        [SwaggerGroup("BinaryConversion")]
         [RequestSizeLimit((long)7 * 1024 * 1024)]
         public async Task<ActionResult<PdfResultBinary[]>> ConvertHtmlToImage([FromBody] HtmlToPdfModelBinary requestModel)
         {
@@ -94,12 +84,12 @@ namespace eLogo.PdfService.Api.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                _logger.Error(ex, "Html to pdf conversion operation failed.", requestModel?.CorrelationId);
+                _logger.Error("Html to pdf conversion operation failed.", ex);
                 return BadRequest(new PdfResultBinary { Success = false, Message = ex.Message });
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Html to pdf conversion operation failed.", requestModel?.CorrelationId);
+                _logger.Error("Html to pdf conversion operation failed.", ex);
                 return StatusCode((int)HttpStatusCode.InternalServerError, new PdfResultBinary { Success = false, Message = ex.Message });
             }
             finally
@@ -121,7 +111,7 @@ namespace eLogo.PdfService.Api.Controllers
                 converterService = _converterList[PdfConverterType.Default];
             }
 
-            if (model.Content.Length > _appSettings.RequestLimit * 1024)
+            if (model.Content.Length > Settings.Settings.AppSetting.RequestLimit * 1024)
             {
                 _logger.Info($"Pdf Belge Boyutu izin verilenin üzerinde. (Size Of Document: {model.Content.Length}), Convertor override ediliyor. {PdfConverterType.WkHtmlToPDF}", null, model.CorrelationId);
                 converterService = _converterList[PdfConverterType.WkHtmlToPDF];

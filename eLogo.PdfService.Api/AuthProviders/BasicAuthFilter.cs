@@ -11,7 +11,6 @@ namespace eLogo.PdfService.Api.AuthProviders
 {
     public class BasicAuthFilter : IAuthorizationFilter
     {
-        private readonly AppSettings _appSettings;
         private readonly string _realm;
         private readonly IApiKeyCollection _apiKeyCollection;
 
@@ -22,7 +21,7 @@ namespace eLogo.PdfService.Api.AuthProviders
         /// <param name="realm"></param>
         /// <param name="apiKeyCollection"></param>
         /// <returns></returns>
-        public BasicAuthFilter(AppSettings appSettings, string realm, IApiKeyCollection apiKeyCollection)
+        public BasicAuthFilter(string realm, IApiKeyCollection apiKeyCollection)
         {
 
             _realm = realm;
@@ -31,7 +30,6 @@ namespace eLogo.PdfService.Api.AuthProviders
                 throw new ArgumentNullException(nameof(realm), @"Please provide a non-empty realm value.");
             }
             _apiKeyCollection = apiKeyCollection;
-            _appSettings = appSettings;
         }
 
         /// <summary>
@@ -43,7 +41,7 @@ namespace eLogo.PdfService.Api.AuthProviders
         {
             try
             {
-                if (!_appSettings.AuthenticationEnable)
+                if (!Settings.Settings.AppSetting.AuthenticationEnable)
                     return;
 
                 string authHeader = context.HttpContext.Request.Headers["Authorization"];
