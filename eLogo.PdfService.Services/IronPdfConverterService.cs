@@ -36,16 +36,17 @@ namespace eLogo.PdfService.Services
         private IronPdf.ChromePdfRenderer CreateRenderer(HtmlToPdfModelBinary model)
         {
             var renderer = new IronPdf.ChromePdfRenderer();
-            renderer.RenderingOptions.EnableJavaScript = true;
-            renderer.RenderingOptions.RenderDelay = 50; //ms
+            renderer.RenderingOptions.EnableJavaScript = Settings.Settings.AppSetting.EnableJavaScript;
+            //renderer.RenderingOptions.RenderDelay = 50; //ms
             renderer.RenderingOptions.Timeout = Settings.Settings.AppSetting.RenderTimeout;
-            renderer.RenderingOptions.CssMediaType = IronPdf.Rendering.PdfCssMediaType.Screen;
+            renderer.RenderingOptions.CssMediaType = IronPdf.Rendering.PdfCssMediaType.Print;
             renderer.RenderingOptions.Zoom = Settings.Settings.AppSetting.ZoomFactor == 0 ? 95 : Settings.Settings.AppSetting.ZoomFactor;
+            //renderer.RenderingOptions.Zoom = model.Zoom ?? 90;
+
             renderer.RenderingOptions.CreatePdfFormsFromHtml = false;
             renderer.RenderingOptions.PrintHtmlBackgrounds = true;
             renderer.RenderingOptions.PaperSize = GetPageSize(model.PageSize);
             renderer.RenderingOptions.FitToPaperMode = IronPdf.Engines.Chrome.FitToPaperModes.Zoom;
-            renderer.RenderingOptions.Zoom = model.Zoom ?? 90;
             renderer.RenderingOptions.PaperOrientation = GetOrientation(model.PageOrientation);
             renderer.RenderingOptions.Title = $"{(!string.IsNullOrEmpty(model.DocumentTitle) ? model.DocumentTitle : Guid.NewGuid().ToString())}.pdf";
             renderer.RenderingOptions.MarginBottom = model.Margins;
@@ -256,8 +257,8 @@ namespace eLogo.PdfService.Services
 
         private async Task SavePdfTransactionRequest(HtmlToPdfModelBinary model, PdfConverterType pdfConverter, MethodBase method)
         {
-            if (model.Content.Length > Settings.Settings.AppSetting.RequestLimit * 1024)
-                throw new InvalidDataException($"HTML Boyutu izin verilen limitlerin üzerinde {Settings.Settings.AppSetting.RequestLimit} KB");
+            if (model.Content.Length > Settings.Settings.AppSetting.ApiRequestLimit * 1024)
+                throw new InvalidDataException($"HTML Boyutu izin verilen limitlerin üzerinde {Settings.Settings.AppSetting.ApiRequestLimit} KB");
 
             if (!Settings.Settings.AppSetting.TransactionLogCounterEnable)
                 return;

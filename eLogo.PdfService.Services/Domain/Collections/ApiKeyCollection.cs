@@ -21,9 +21,9 @@ namespace eLogo.PdfService.Services.Domain.Collections
         {
         }
 
-        public ApiKeyModel GetApiKey(string clientId, string clientSecret)
+        public ApiKeyModel GetBySecret(string clientSecret)
         {
-            return this.Filter(c => c.ClientID == clientId && c.ClientSecret == clientSecret).FirstOrDefault();
+            return this.Filter(c => c.ClientSecret == clientSecret).FirstOrDefault();
         }
 
          

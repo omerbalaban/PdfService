@@ -112,7 +112,7 @@ namespace eLogo.PdfService.Api.Controllers
                 converterService = _converterList[PdfConverterType.Default];
             }
 
-            if (model.Content.Length > Settings.Settings.AppSetting.RequestLimit * 1024)
+            if (model.Content.Length > Settings.Settings.AppSetting.ApiRequestLimit * 1024)
             {
                 _logger.Info($"Pdf Belge Boyutu izin verilenin üzerinde. (Size Of Document: {model.Content.Length}), Convertor override ediliyor. {PdfConverterType.WkHtmlToPDF}", null, model.CorrelationId);
                 converterService = _converterList[PdfConverterType.WkHtmlToPDF];

@@ -39,7 +39,7 @@ namespace eLogo.PdfService.Api
             // Register services
             AddServices(builder);
             RegisterFluentdLogger(builder);
-            
+
             RegisterDbContext(builder);
 
             RegisterApplicationServices(builder);
@@ -104,7 +104,7 @@ namespace eLogo.PdfService.Api
         {
             var connectionString = Settings.Settings.AppSetting.MongoDbConnectionString;
             var database = Settings.Settings.AppSetting.Database;
-            
+
             Trace.TraceInformation($"MongoDB: {MaskConnectionString(connectionString)} / {database}");
 
             MongoClient mongoClient = new MongoClient(connectionString);
@@ -119,7 +119,7 @@ namespace eLogo.PdfService.Api
             var appName = Settings.Settings.AppSetting.ApplicationName ?? "PdfService";
             var fluentdHost = Settings.Settings.AppSetting.FluentdHostName;
             var fluentdPort = Settings.Settings.AppSetting.FluentdPort;
-            
+
             Trace.TraceInformation($"Fluentd: {fluentdHost}:{fluentdPort}");
 
             builder.Services.AddSingleton<IServiceLogger>(serviceProvider =>
@@ -177,14 +177,18 @@ namespace eLogo.PdfService.Api
 
         private static void RegisterIronPdf(WebApplicationBuilder builder)
         {
+
             IronPdf.License.LicenseKey = Settings.Settings.AppSetting.IronPdfSerialKey;
-            IronPdf.Logging.Logger.EnableDebugging = Settings.Settings.AppSetting.EnableIronPdfDebug;
             IronPdf.Logging.Logger.LoggingMode = (IronPdf.Logging.Logger.LoggingModes)Settings.Settings.AppSetting.IronPdfLogLevel;
             IronPdf.Installation.ChromeGpuMode = IronPdf.Engines.Chrome.ChromeGpuModes.Disabled;
             IronPdf.Installation.LinuxAndDockerDependenciesAutoConfig = true;
-            
+            IronPdf.Installation.TempFolderPath = "/tmp/";
+
             IronPdf.Installation.Initialize();
-            Trace.TraceInformation($"IronPdf: {(IronPdf.License.IsLicensed ? "Licensed" : "Trial")}");
+
+            Trace.TraceInformation("=================================================");
+            if (IronPdf.License.IsLicensed) Trace.TraceInformation("  ✓ IronPdf ise Licensed"); else Trace.TraceInformation("  X IronPdf ise Trial");
+            Trace.TraceInformation("=================================================");
 
             builder.Services.AddSingleton<IIronPdfConverter, IronPdfConverterService>();
         }
@@ -205,8 +209,8 @@ namespace eLogo.PdfService.Api
                 if (!string.IsNullOrEmpty(uri.UserInfo))
                 {
                     var parts = uri.UserInfo.Split(':');
-                    var maskedUserInfo = parts.Length > 1 
-                        ? $"{parts[0]}:***" 
+                    var maskedUserInfo = parts.Length > 1
+                        ? $"{parts[0]}:***"
                         : uri.UserInfo;
                     return connectionString.Replace(uri.UserInfo, maskedUserInfo);
                 }

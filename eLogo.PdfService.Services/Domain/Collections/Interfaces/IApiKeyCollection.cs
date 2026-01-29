@@ -5,8 +5,6 @@ namespace eLogo.PdfService.Services.Domain.Collections.Interfaces
 {
     public interface IApiKeyCollection : IGenericMongoCollection<ApiKeyModel>
     {
-        ApiKeyModel GetApiKey(string client_id, string client_secret);
-         
-
+        ApiKeyModel GetBySecret(string clientSecret);
     }
 }
