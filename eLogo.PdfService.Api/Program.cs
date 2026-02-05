@@ -132,6 +132,7 @@ namespace eLogo.PdfService.Api
             // Register Repositories (Scoped for request lifetime)
             builder.Services.AddScoped<ITransactionTracking, TransactionTracking>();
             builder.Services.AddScoped<IClientCredentialsRepository, ClientCredentialsRepository>();
+            builder.Services.AddScoped<IFailedConversionRepository, FailedConversionRepository>();
 
             Trace.TraceInformation("MongoDB: Repositories registered");
         }
@@ -200,6 +201,7 @@ namespace eLogo.PdfService.Api
             builder.Services.AddSingleton<ICompressService, CompressService>();
             builder.Services.AddSingleton<IImageResizer, ImageResizer>();
             builder.Services.AddScoped<ITransactionTrackingService, TransactionTrackingService>();
+            builder.Services.AddScoped<IFailedConversionService, FailedConversionService>();
 
             // DinkToPdf Converter Registration
             builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
@@ -229,7 +231,7 @@ namespace eLogo.PdfService.Api
             else
                 Trace.TraceInformation("  X IronPdf ise Trial");
 
-            builder.Services.AddSingleton<IPdfConvertService, IronPdfConverterService>();
+            builder.Services.AddScoped<IPdfConvertService, IronPdfConverterService>();
         }
 
         private static string MaskConnectionString(string connectionString)

@@ -16,6 +16,7 @@ namespace eLogo.PdfService.Services.Infrastructure
             {
                 await CreateApiKeyIndexesAsync(database);
                 await CreatePdfTransactionIndexesAsync(database);
+                await CreateFailedConversionsIndexesAsync(database);
                 
                 Trace.TraceInformation("MongoDB: ✓ All indexes created successfully");
             }
@@ -110,6 +111,43 @@ namespace eLogo.PdfService.Services.Infrastructure
             });
 
             Trace.TraceInformation("  ✓ PdfApiTransaction indexes created");
+        }
+
+        private static async Task CreateFailedConversionsIndexesAsync(IMongoDatabase database)
+        {
+            var collection = database.GetCollection<FailedConversionModel>("FailedConversions");
+
+            // 1. Index on CorrelationId for lookup
+            var correlationIdIndexModel = new CreateIndexModel<FailedConversionModel>(
+                Builders<FailedConversionModel>.IndexKeys.Ascending(x => x.CorrelationId),
+                new CreateIndexOptions { Name = "idx_failedConv_correlationId" }
+            );
+
+
+            // 3. Index on IpAddress for tracking
+            var ipAddressIndexModel = new CreateIndexModel<FailedConversionModel>(
+                Builders<FailedConversionModel>.IndexKeys.Ascending(x => x.IpAddress),
+                new CreateIndexOptions { Name = "idx_failedConv_ipAddress", Sparse = true }
+            );
+
+            // 4. TTL Index - automatically delete old failed conversions after 7 days
+            var ttlIndexModel = new CreateIndexModel<FailedConversionModel>(
+                Builders<FailedConversionModel>.IndexKeys.Ascending(x => x.CreatedAt),
+                new CreateIndexOptions 
+                { 
+                    Name = "idx_failedConv_createdAt_ttl",
+                    ExpireAfter = TimeSpan.FromDays(7) // Auto-delete after 7 days
+                }
+            );
+
+            await collection.Indexes.CreateManyAsync(new[]
+            {
+                correlationIdIndexModel,
+                ipAddressIndexModel,
+                ttlIndexModel
+            });
+
+            Trace.TraceInformation("  ✓ FailedConversions indexes created");
         }
     }
 }

@@ -1,5 +1,7 @@
 ﻿using eLogo.LogProvider.Interface;
+using eLogo.LogProvider.LogService;
 using eLogo.PdfService.Models;
+using eLogo.PdfService.Services.Domain.Models;
 using eLogo.PdfService.Services.Interfaces;
 using HtmlAgilityPack;
 using System;
@@ -16,12 +18,14 @@ namespace eLogo.PdfService.Services
         protected readonly IImageResizer _imageResizer;
         protected readonly IServiceLogger _logger;
         protected readonly ICompressService _compressService;
+        protected readonly IFailedConversionService _failedConversionService;
 
-        protected BasePdfConverterService(IImageResizer imageResizer, IServiceLogger logger, ICompressService compressService)
+        protected BasePdfConverterService(IImageResizer imageResizer, IServiceLogger logger, ICompressService compressService, IFailedConversionService failedConversionService)
         {
             _imageResizer = imageResizer;
             _logger = logger;
             _compressService = compressService;
+            _failedConversionService = failedConversionService;
         }
 
         public abstract Task<PdfResultBinary> ConvertHtmlToPdf(HtmlToPdfModelBinary model);
@@ -99,6 +103,42 @@ namespace eLogo.PdfService.Services
 
             return cleanedHtml;
         }
-              
+
+        protected void TrackFailedConversion(HtmlToPdfModelBinary model, Exception ex)
+        {
+            try
+            {
+                var userAccountRef = model?.CustomPropertyItems?.FirstOrDefault(s => s.Key == "UserAccountRef")?.Value;
+                var ipAddress = IpAddressResolver.GetClientIpAddress();
+                byte[] htmlBuffer = model?.Content;
+
+                var failedConversion = new FailedConversionModel
+                {
+                    CorrelationId = model?.CorrelationId,
+                    IpAddress = ipAddress,
+                    UserAccountRef = userAccountRef,
+                    HtmlBuffer = htmlBuffer,
+                    DocumentTitle = model?.DocumentTitle,
+                    PageOrientation = model?.PageOrientation,
+                    PageSize = model?.PageSize,
+                    Margins = model?.Margins ?? 0,
+                    Zoom = model?.Zoom,
+                    IsZipped = model?.IsZipped ?? false,
+                    ErrorMessage = ex?.Message,
+                    ExceptionType = ex?.GetType().Name,
+                    StackTrace = ex?.StackTrace,
+                    InnerExceptionMessage = ex?.InnerException?.Message,
+                    ContentLength = htmlBuffer?.Length ?? 0,
+                    PdfConverter = (int)PdfConverterType.IronPdfConverter
+                };
+
+                _failedConversionService.TrackFailedConversionFireAndForget(failedConversion);
+            }
+            catch (Exception trackEx)
+            {
+                _logger.Error("Failed to track failed conversion", trackEx);
+            }
+        }
+
     }
 }

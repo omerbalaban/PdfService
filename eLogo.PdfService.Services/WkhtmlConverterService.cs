@@ -13,7 +13,8 @@ namespace eLogo.PdfService.Services
     {
         private readonly IConverter _dinkToPdfConverter;
 
-        public WkhtmlConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IConverter dinkToPdfConverter) : base(imageResizer, logger, compressService)
+        public WkhtmlConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IConverter dinkToPdfConverter, IFailedConversionService failedConversionService)
+            : base(imageResizer, logger, compressService, failedConversionService)
         {
             _dinkToPdfConverter = dinkToPdfConverter;
         }
@@ -89,6 +90,7 @@ namespace eLogo.PdfService.Services
             catch (Exception ex)
             {
                 _logger.Error($"WkhtmlToPdf conversion failed: {ex.Message}", ex);
+                TrackFailedConversion(model, ex);
                 throw;
             }
             finally
@@ -126,5 +128,6 @@ namespace eLogo.PdfService.Services
                 _ => PaperKind.A4
             };
         }
+
     }
 }

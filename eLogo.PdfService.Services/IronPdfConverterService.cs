@@ -2,11 +2,10 @@
 using eLogo.PdfService.Models;
 using eLogo.PdfService.Services.Interfaces;
 using IronSoftware.Drawing;
+using Microsoft.AspNetCore.Http;
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -14,8 +13,10 @@ namespace eLogo.PdfService.Services
 {
     public class IronPdfConverterService : BasePdfConverterService
     {
-        public IronPdfConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService) : base(imageResizer, logger, compressService)
+
+        public IronPdfConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IFailedConversionService failedConversionService) : base(imageResizer, logger, compressService, failedConversionService)
         {
+
         }
 
         protected override PdfConverterType GetConverterType() => PdfConverterType.IronPdfConverter;
@@ -112,6 +113,13 @@ namespace eLogo.PdfService.Services
             catch (TimeoutException ex)
             {
                 _logger.Error($"Timeout: {ex.Message}", ex);
+                TrackFailedConversion(model, ex);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"IronPDF conversion failed: {ex.Message}", ex);
+                TrackFailedConversion(model, ex);
                 throw;
             }
             finally
@@ -168,5 +176,7 @@ namespace eLogo.PdfService.Services
         {
             return ParseEnumOrDefault(orientation, IronPdf.Rendering.PdfPaperOrientation.Portrait);
         }
+
+
     }
 }
