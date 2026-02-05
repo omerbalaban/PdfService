@@ -1,47 +1,32 @@
-﻿using eLogo.LogProvider.Interface;
+﻿using DinkToPdf;
+using DinkToPdf.Contracts;
+using eLogo.LogProvider.Interface;
 using eLogo.PdfService.Models;
-using eLogo.PdfService.Services.Domain.Collections.Interfaces;
 using eLogo.PdfService.Services.Interfaces;
-using HtmlAgilityPack;
-using Newtonsoft.Json;
 using System;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace eLogo.PdfService.Services
 {
-    public class WkhtmlConverterService : IWkhtmlConvertService
+    public class WkhtmlConverterService : BasePdfConverterService
     {
-        private readonly IServiceLogger _logger;
-        private readonly IImageResizer _imageResizer;
-        private readonly ICompressService _compressService;
-        private readonly IPdfTransactionCollection _pdfTransactionCollection;
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConverter _dinkToPdfConverter;
 
-        public WkhtmlConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IPdfTransactionCollection pdfTransactionCollection, IHttpClientFactory httpClientFactory)
+        public WkhtmlConverterService(IServiceLogger logger, IImageResizer imageResizer, ICompressService compressService, IConverter dinkToPdfConverter) : base(imageResizer, logger, compressService)
         {
-            _logger = logger;
-            _imageResizer = imageResizer;
-            _compressService = compressService;
-            _pdfTransactionCollection = pdfTransactionCollection;
-            _httpClientFactory = httpClientFactory;
+            _dinkToPdfConverter = dinkToPdfConverter;
         }
 
-        public Task<PdfResultBinary[]> ConvertHtmlToImage(HtmlToPdfModelBinary model)
+        protected override PdfConverterType GetConverterType() => PdfConverterType.WkHtmlToPDF;
+
+        protected override Task<byte[][]> RenderHtmlToImagesAsync(HtmlToPdfModelBinary model, string htmlContent)
         {
-            throw new NotImplementedException();
+            throw new NotImplementedException("WkhtmlToPdf does not support HTML to Image conversion");
         }
 
-        public async Task<PdfResultBinary> ConvertHtmlToPdf(HtmlToPdfModelBinary model)
+        public override async Task<PdfResultBinary> ConvertHtmlToPdf(HtmlToPdfModelBinary model)
         {
-
             byte[] htmlBuffer = null;
             try
             {
@@ -56,63 +41,54 @@ namespace eLogo.PdfService.Services
                             attachment.Data = _compressService.UnzipData(attachment.Data);
                 }
 
-                await SavePdfTransactionRequest(model, PdfConverterType.WkHtmlToPDF, MethodInfo.GetCurrentMethod());
-
-
                 htmlBuffer = model.Content;
-                await WriteTraceFile(model, htmlBuffer);
-
                 string htmlContent = ClearHtmlDocument(Encoding.UTF8.GetString(htmlBuffer));
 
-                using var httpClient = _httpClientFactory.CreateClient();
-                
-                var requestModel = new HtmlToPdfModel
+                _logger.Info($"WkhtmlToPdf HtmlContent Temizleme Tamamlandi {model.CorrelationId} DocTitle : {model.DocumentTitle}");
+
+                // DinkToPdf conversion
+                var globalSettings = new GlobalSettings
                 {
-                    Attachments = model.Attachments?.Select(s => new AttachmentModel { Data = Convert.ToBase64String(s.Data), FileName = s.FileName }).ToArray(),
-                    Base64HtmlContent = Convert.ToBase64String(Encoding.UTF8.GetBytes(htmlContent)),
-                    CorrelationId = model.CorrelationId,
-                    CustomPropertyItems = model.CustomPropertyItems?.Select(s => new PropertyItem { Key = s.Key, Value = s.Value }).ToArray(),
-                    DocumentTitle = string.IsNullOrEmpty(model.DocumentTitle) ? model.CorrelationId : model.DocumentTitle,
-                    Margins = model.Margins,
-                    PageOrientation = model.PageOrientation,
-                    PageSize = model.PageSize,
-                    PdfConverter = model.PdfConverter ?? 30,
-                    Zoom = model.Zoom ?? 100,
+                    ColorMode = ColorMode.Color,
+                    Orientation = GetOrientation(model.PageOrientation),
+                    PaperSize = GetPaperSize(model.PageSize),
+                    Margins = new MarginSettings { Top = model.Margins, Bottom = model.Margins, Left = model.Margins, Right = model.Margins },
+                    DocumentTitle = string.IsNullOrEmpty(model.DocumentTitle) ? model.CorrelationId : model.DocumentTitle
                 };
 
-                string requestJson = JsonConvert.SerializeObject(requestModel, Formatting.Indented);
-                using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
-                
-                var response = await httpClient.PostAsync(Settings.Settings.AppSetting.wkhtmlPdfSettings.WkhtmlToPdfServiceUrl, content);
+                var objectSettings = new ObjectSettings
+                {
+                    PagesCount = true,
+                    HtmlContent = htmlContent,
+                    WebSettings = { DefaultEncoding = "utf-8" },
+                    HeaderSettings = { FontSize = 9, Right = "Page [page] of [toPage]", Line = false },
+                    FooterSettings = { FontSize = 9, Line = false, Center = model.DocumentTitle }
+                };
 
-                _logger.Info($"WkhtmlToPdf HtmlContent Temizleme Tamamlandi  {model.CorrelationId} DocTitle : {model.DocumentTitle}");
+                var document = new HtmlToPdfDocument()
+                {
+                    GlobalSettings = globalSettings,
+                    Objects = { objectSettings }
+                };
+
+                byte[] pdfBytes = _dinkToPdfConverter.Convert(document);
 
                 // Nullify large objects to help GC
                 htmlBuffer = null;
                 model.Content = null;
 
-                if (response.IsSuccessStatusCode)
+                _logger.Info($"WkhtmlToPdf Conversion Completed {model.CorrelationId} DocTitle : {model.DocumentTitle}");
+
+                return new PdfResultBinary
                 {
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    var pdfResult = JsonConvert.DeserializeObject<PdfResult>(responseContent);
-                    
-                    return new PdfResultBinary
-                    {
-                        Content = model.IsZipped ? _compressService.ZipData(pdfResult.AsByteArray()) : pdfResult.AsByteArray(),
-                        Success = true,
-                        Id = model.CorrelationId ?? Guid.NewGuid().ToString()
-                    };
-                }
-                else
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    throw new ArgumentException($"Pdf Donusumu tamamlanamadi {model.CorrelationId} {model.DocumentTitle}, Status: {response.StatusCode}, Error: {errorContent}");
-                }
-            
+                    Content = model.IsZipped ? _compressService.ZipData(pdfBytes) : pdfBytes,
+                    Success = true,
+                    Id = model.CorrelationId ?? Guid.NewGuid().ToString()
+                };
             }
             catch (Exception ex)
             {
-                _logger.Error($"{ex.Message}", ex);
+                _logger.Error($"WkhtmlToPdf conversion failed: {ex.Message}", ex);
                 throw;
             }
             finally
@@ -122,61 +98,33 @@ namespace eLogo.PdfService.Services
             }
         }
 
-
-
-        private string ClearHtmlDocument(string htmlInput)
+        private Orientation GetOrientation(string orientation)
         {
-            using var ms = new MemoryStream();
-            var document = new HtmlDocument();
-            document.OptionFixNestedTags = true;
-            document.OptionAutoCloseOnEnd = true;
-            document.LoadHtml(htmlInput);
-            document.Save(ms, Encoding.UTF8);
-            return RemoveConsoleLogs(Encoding.UTF8.GetString(ms.ToArray()).Replace("&#xA;", "").Replace("src=\".\"", "src=\"\""));
-        }
+            if (string.IsNullOrEmpty(orientation))
+                return Orientation.Portrait;
 
-        private string RemoveConsoleLogs(string input)
-        {
-            string pattern = @"console\.log\(([^)]+)\);?";
-
-            string cleanedHtml = Regex.Replace(input, pattern, string.Empty);
-
-            if (cleanedHtml.Length > 1_250_000)
+            return orientation.ToLower() switch
             {
-                cleanedHtml = this._imageResizer.CleanImages(cleanedHtml);
-            }
-
-            return cleanedHtml;
-        }
-        private async Task WriteTraceFile(HtmlToPdfModelBinary model, byte[] htmlBuffer)
-        {
-            //asenkron olarak mongoya yazılacak!!
+                "landscape" => Orientation.Landscape,
+                "portrait" => Orientation.Portrait,
+                _ => Orientation.Portrait
+            };
         }
 
-        private async Task SavePdfTransactionRequest(HtmlToPdfModelBinary model, PdfConverterType pdfConverter, MethodBase method)
+        private PaperKind GetPaperSize(string pageSize)
         {
-            if (!Settings.Settings.AppSetting.TransactionLogCounterEnable)
-                return;
+            if (string.IsNullOrEmpty(pageSize))
+                return PaperKind.A4;
 
-            var sourceId = model.CustomPropertyItems?.FirstOrDefault(s => s.Key == "SourceId")?.Value;
-            var vkn = model.CustomPropertyItems?.FirstOrDefault(s => s.Key == "VKN")?.Value;
-            var userAccounRef = model.CustomPropertyItems?.FirstOrDefault(s => s.Key == "UserAccountRef")?.Value;
-
-            await _pdfTransactionCollection.InsertAsync(new Services.Domain.Models.PdfApiTransaction()
+            return pageSize.ToUpper() switch
             {
-                ApplicationName = Settings.Settings.AppSetting.ApplicationName,
-                ClientKey = string.Empty,
-                CorrelationId = model.CorrelationId,
-                CreatedAt = DateTime.Now,
-                DocumentTitle = model.DocumentTitle,
-                PageOrientation = model.PageOrientation,
-                PdfConverter = (int)(model.PdfConverter ?? (int)PdfConverterType.Default),
-                RequestSize = model.Content.Length,
-                Source = string.IsNullOrEmpty(sourceId) ? "LEGACY" : sourceId,
-                Vkn = string.IsNullOrEmpty(vkn) ? "" : vkn,
-                EndPoint = method.Name,
-                UserAccounRef = userAccounRef
-            });
+                "A3" => PaperKind.A3,
+                "A4" => PaperKind.A4,
+                "A5" => PaperKind.A5,
+                "LETTER" => PaperKind.Letter,
+                "LEGAL" => PaperKind.Legal,
+                _ => PaperKind.A4
+            };
         }
     }
 }

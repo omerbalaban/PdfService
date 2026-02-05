@@ -4,7 +4,7 @@ using System;
 
 namespace eLogo.PdfService.Services.Domain.Models
 {
-    public class PdfApiTransaction : BaseDocumentModel
+    public class TransactionTrackingModel : BaseDocumentModel
     {
   
         [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
@@ -19,7 +19,7 @@ namespace eLogo.PdfService.Services.Domain.Models
         public string Source { get; set; }
         public string ApplicationName { get; set; }
         public string EndPoint { get; set; }
-        public string ContentHash { get; set; }
+        public string IpAddress { get; set; }
 
         [BsonIgnoreIfNull]
         public string UserAccounRef { get; set; }

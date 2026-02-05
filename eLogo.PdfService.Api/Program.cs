@@ -2,9 +2,8 @@
 using eLogo.LogProvider.Interface;
 using eLogo.PdfService.Api.Middleware;
 using eLogo.PdfService.Services;
-using eLogo.PdfService.Services.Domain.Collections;
-using eLogo.PdfService.Services.Domain.Collections.Interfaces;
 using eLogo.PdfService.Services.Interfaces;
+using eLogo.PdfService.Services.Repositories;
 using eLogo.PdfService.Settings.PaasSettings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -17,6 +16,11 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 using System.Threading.Tasks;
+using DinkToPdf;
+using DinkToPdf.Contracts;
+using eLogo.LogProvider.Helper;
+using eLogo.PdfService.Services.Infrastructure;
+using System;
 
 namespace eLogo.PdfService.Api
 {
@@ -56,8 +60,14 @@ namespace eLogo.PdfService.Api
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             RegisterSwagger(builder);
 
+            // Add Health Checks
+            builder.Services.AddHealthChecks();
+
             var app = builder.Build();
             Trace.TraceInformation($"Environment: {app.Environment.EnvironmentName}");
+
+            // Initialize MongoDB Indexes
+            await InitializeMongoDbIndexesAsync(app);
 
             // Configure pipeline
             app.UseResponseCompression();
@@ -78,7 +88,9 @@ namespace eLogo.PdfService.Api
             }
 
             app.MapControllers();
+            app.MapHealthChecks("/health");
 
+            Trace.TraceInformation("Health Endpoint: /health");
             Trace.TraceInformation("=================================================");
             Trace.TraceInformation("  ✓ Application Ready");
             Trace.TraceInformation("=================================================");
@@ -103,15 +115,42 @@ namespace eLogo.PdfService.Api
         private static void RegisterDbContext(WebApplicationBuilder builder)
         {
             var connectionString = Settings.Settings.AppSetting.MongoDbConnectionString;
-            var database = Settings.Settings.AppSetting.Database;
+            var databaseName = LogHelper.GetDbName(connectionString);
 
-            Trace.TraceInformation($"MongoDB: {MaskConnectionString(connectionString)} / {database}");
+            Trace.TraceInformation($"MongoDB: {MaskConnectionString(connectionString)}");
 
-            MongoClient mongoClient = new MongoClient(connectionString);
-            builder.Services.AddSingleton<IMongoClient>((imp) => mongoClient);
+            var mongoClient = new MongoClient(connectionString);
+            builder.Services.AddSingleton<IMongoClient>(mongoClient);
 
-            builder.Services.AddScoped<IPdfTransactionCollection>(s => ActivatorUtilities.CreateInstance<PdfTransactionCollection>(s, s.GetRequiredService<IMongoClient>(), database));
-            builder.Services.AddScoped<IApiKeyCollection>(s => ActivatorUtilities.CreateInstance<ApiKeyCollection>(s, s.GetRequiredService<IMongoClient>(), database));
+            // Register IMongoDatabase
+            builder.Services.AddSingleton<IMongoDatabase>(sp =>
+            {
+                var client = sp.GetRequiredService<IMongoClient>();
+                return client.GetDatabase(databaseName);
+            });
+
+            // Register Repositories (Scoped for request lifetime)
+            builder.Services.AddScoped<ITransactionTracking, TransactionTracking>();
+            builder.Services.AddScoped<IClientCredentialsRepository, ClientCredentialsRepository>();
+
+            Trace.TraceInformation("MongoDB: Repositories registered");
+        }
+
+        private static async Task InitializeMongoDbIndexesAsync(WebApplication app)
+        {
+            try
+            {
+                using var scope = app.Services.CreateScope();
+                var database = scope.ServiceProvider.GetRequiredService<IMongoDatabase>();
+
+                await MongoDbIndexInitializer.CreateIndexesAsync(database);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"MongoDB Index Initialization Failed: {ex.Message}");
+                // Don't throw - allow app to start even if indexes fail
+                // Indexes can be created manually or retried later
+            }
         }
 
         private static void RegisterFluentdLogger(WebApplicationBuilder builder)
@@ -156,23 +195,21 @@ namespace eLogo.PdfService.Api
             });
         }
 
-        /// <summary>
-        /// Registers application-specific services
-        /// </summary>
         private static void RegisterApplicationServices(WebApplicationBuilder builder)
         {
-            // Stateless utility services - Singleton for best performance
-            // IMPORTANT: These MUST be thread-safe and stateless
             builder.Services.AddSingleton<ICompressService, CompressService>();
             builder.Services.AddSingleton<IImageResizer, ImageResizer>();
+            builder.Services.AddScoped<ITransactionTrackingService, TransactionTrackingService>();
 
-            // Register HttpClient factory for making HTTP requests
+            // DinkToPdf Converter Registration
+            builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
+
             builder.Services.AddHttpClient();
 
-            // Register PDF converter services (Scoped - requires scoped dependencies like IPdfTransactionCollection)
-            builder.Services.AddScoped<IWkhtmlConvertService, WkhtmlConverterService>();
+            builder.Services.AddScoped<IPdfConvertService, WkhtmlConverterService>();
 
             Trace.TraceInformation("Services: Utility services registered (Singleton)");
+            Trace.TraceInformation("Services: DinkToPdf Converter registered");
         }
 
         private static void RegisterIronPdf(WebApplicationBuilder builder)
@@ -186,16 +223,15 @@ namespace eLogo.PdfService.Api
 
             IronPdf.Installation.Initialize();
 
-            Trace.TraceInformation("=================================================");
-            if (IronPdf.License.IsLicensed) Trace.TraceInformation("  ✓ IronPdf ise Licensed"); else Trace.TraceInformation("  X IronPdf ise Trial");
-            Trace.TraceInformation("=================================================");
+            Trace.TraceInformation("Checking IronPdf License");
+            if (IronPdf.License.IsLicensed)
+                Trace.TraceInformation("  ✓ IronPdf ise Licensed");
+            else
+                Trace.TraceInformation("  X IronPdf ise Trial");
 
-            builder.Services.AddSingleton<IIronPdfConverter, IronPdfConverterService>();
+            builder.Services.AddSingleton<IPdfConvertService, IronPdfConverterService>();
         }
 
-        /// <summary>
-        /// Masks sensitive information in connection strings for safe logging
-        /// </summary>
         private static string MaskConnectionString(string connectionString)
         {
             if (string.IsNullOrEmpty(connectionString))
@@ -203,8 +239,6 @@ namespace eLogo.PdfService.Api
 
             try
             {
-                // Mask password in MongoDB connection string
-                // Format: mongodb://username:password@host:port/database
                 var uri = new System.Uri(connectionString);
                 if (!string.IsNullOrEmpty(uri.UserInfo))
                 {
@@ -218,7 +252,6 @@ namespace eLogo.PdfService.Api
             }
             catch
             {
-                // If parsing fails, mask the entire string except scheme
                 var schemeEnd = connectionString.IndexOf("://");
                 if (schemeEnd > 0)
                 {

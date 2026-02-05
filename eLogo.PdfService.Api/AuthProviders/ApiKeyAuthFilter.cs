@@ -1,48 +1,62 @@
-﻿using eLogo.PdfService.Services.Domain.Collections.Interfaces;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using eLogo.PdfService.Settings;
-using System;
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
+using eLogo.PdfService.Services.Repositories;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace eLogo.PdfService.Api.AuthProviders
 {
-public class ApiKeyAuthFilter : IAuthorizationFilter
+    public class ApiKeyAuthFilter : IAsyncAuthorizationFilter
     {
-        // x-api-key best practice: No realm or db dependency needed
-        public ApiKeyAuthFilter() { }
+        private readonly IClientCredentialsRepository _apiKeyRepository;
 
-        /// <summary>
-        /// Basic authentication 
-        /// </summary>
-        /// <param name="context"></param>
-        /// <returns></returns>
-        public void OnAuthorization(AuthorizationFilterContext context)
+        public ApiKeyAuthFilter(IClientCredentialsRepository apiKeyRepository)
         {
-            if (string.IsNullOrWhiteSpace(Settings.Settings.AppSetting.ApiKey))
-                return;
+            _apiKeyRepository = apiKeyRepository;
+        }
 
+        public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
+        {
             string apiKeyHeader = context.HttpContext.Request.Headers["x-api-key"];
-            string configuredApiKey = Settings.Settings.AppSetting.ApiKey;
-            if (!string.IsNullOrWhiteSpace(apiKeyHeader) && !string.IsNullOrWhiteSpace(configuredApiKey) && apiKeyHeader == configuredApiKey)
+
+            if (string.IsNullOrWhiteSpace(apiKeyHeader))
             {
+                context.HttpContext.Response.StatusCode = 401;
+                context.Result = new JsonResult(new { error = "API key is required", message = "Please provide x-api-key header" })
+                {
+                    StatusCode = 401
+                };
                 return;
             }
 
-            context.HttpContext.Response.StatusCode = 401;
-            ReturnUnauthorizedResult(context);
-        }
+            if (!apiKeyHeader.Equals(Settings.Settings.AppSetting.ApiKey, System.StringComparison.OrdinalIgnoreCase))
+            {
+                context.HttpContext.Response.StatusCode = 401;
+                context.Result = new JsonResult(new { error = "Invalid or expired API key", message = "The provided API key is invalid, expired, or rate limit exceeded" })
+                {
+                    StatusCode = 401
+                };
+                return;
+            }
 
-        /// <summary>
-        /// ReturnUnauthorizedResult
-        /// </summary>
-        /// <param name="context"></param>
-        /// <returns></returns>
-        private void ReturnUnauthorizedResult(AuthorizationFilterContext context)
-        {
-            context.Result = new UnauthorizedResult();
+            /*
+            //var apiKeyModel = await _apiKeyRepository.ValidateAndIncrementUsageAsync(apiKeyHeader);
+            if (apiKeyModel == null)
+            {
+                context.HttpContext.Response.StatusCode = 401;
+                context.Result = new JsonResult(new { error = "Invalid or expired API key", message = "The provided API key is invalid, expired, or rate limit exceeded" })
+                {
+                    StatusCode = 401
+                };
+                return;
+            }
+            
+
+            // Store API key info in HttpContext for later use
+            context.HttpContext.Items["ApiKeyModel"] = apiKeyModel;
+            context.HttpContext.Items["ClientApplicationId"] = apiKeyModel.ClientApplicationId;
+            */
         }
     }
 }
+

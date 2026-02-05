@@ -12,6 +12,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<PackageReference Include="DinkToPdf" Version="1.0.8" />
 		<PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
 		<PackageReference Include="IronPdf.Native.Chrome.Linux" Version="2025.12.2" />
 		<PackageReference Include="IronPdf" Version="2025.12.2" />

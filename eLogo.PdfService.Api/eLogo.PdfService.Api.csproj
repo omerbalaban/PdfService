@@ -13,7 +13,7 @@
 		<DebugType>portable</DebugType>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<PreserveCompilationContext>true</PreserveCompilationContext>
-		<AssemblyName>eLogo.Micronorm.PdfService.Api</AssemblyName>
+		<AssemblyName>eLogo.PdfService.Api</AssemblyName>
 		<OutputType>Exe</OutputType>
 		<PackageId>PdfService</PackageId>
 		<RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
@@ -49,6 +49,7 @@
 
 
 	<ItemGroup>
+		<PackageReference Include="DinkToPdf" Version="1.0.8" />
 		<PackageReference Include="eLogo.LogProvider" Version="2.0.1" />
 		<PackageReference Include="IronPdf.Native.Chrome.Linux" Version="2025.12.2" />
 		<PackageReference Include="IronSoftware.System.Drawing" Version="2025.9.3" />
